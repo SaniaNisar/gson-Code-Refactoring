@@ -1,19 +1,3 @@
-/*
- * Copyright (C) 2011 Google Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package com.google.gson.internal.bind;
 
 import com.google.gson.Gson;
@@ -38,6 +22,7 @@ import java.util.Map;
  * primitive/Map/List on deserialization.
  */
 public final class ObjectTypeAdapter extends TypeAdapter<Object> {
+
   /** Gson default factory using {@link ToNumberPolicy#DOUBLE}. */
   private static final TypeAdapterFactory DOUBLE_FACTORY = newFactory(ToNumberPolicy.DOUBLE);
 
@@ -49,6 +34,7 @@ public final class ObjectTypeAdapter extends TypeAdapter<Object> {
     this.toNumberStrategy = toNumberStrategy;
   }
 
+  // Factory method to create a new factory instance for the specific ToNumberStrategy
   private static TypeAdapterFactory newFactory(ToNumberStrategy toNumberStrategy) {
     return new TypeAdapterFactory() {
       @SuppressWarnings("unchecked")
@@ -62,6 +48,7 @@ public final class ObjectTypeAdapter extends TypeAdapter<Object> {
     };
   }
 
+  // Returns the appropriate factory based on the given ToNumberStrategy
   public static TypeAdapterFactory getFactory(ToNumberStrategy toNumberStrategy) {
     if (toNumberStrategy == ToNumberPolicy.DOUBLE) {
       return DOUBLE_FACTORY;
@@ -111,6 +98,7 @@ public final class ObjectTypeAdapter extends TypeAdapter<Object> {
     Object current;
     JsonToken peeked = in.peek();
 
+    // Try to begin nested structures (Array or Object)
     current = tryBeginNesting(in, peeked);
     if (current == null) {
       return readTerminal(in, peeked);
