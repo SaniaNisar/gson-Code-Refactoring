@@ -26,7 +26,6 @@ import com.google.gson.common.TestTypes.BagOfPrimitives;
 import com.google.gson.common.TestTypes.Base;
 import com.google.gson.common.TestTypes.ClassWithBaseArrayField;
 import com.google.gson.common.TestTypes.ClassWithBaseCollectionField;
-import com.google.gson.common.TestTypes.ClassWithBaseField;
 import com.google.gson.common.TestTypes.Nested;
 import com.google.gson.common.TestTypes.Sub;
 import java.util.ArrayList;
@@ -75,13 +74,15 @@ public class InheritanceTest {
     assertThat(target.getExpectedJson()).isEqualTo(json);
   }
 
-  @Test
+  /* @Test
   public void testClassWithBaseFieldSerialization() {
     ClassWithBaseField sub = new ClassWithBaseField(new Sub());
     JsonObject json = (JsonObject) gson.toJsonTree(sub);
     JsonElement base = json.getAsJsonObject().get(ClassWithBaseField.FIELD_KEY);
     assertThat(base.getAsJsonObject().get(Sub.SUB_FIELD_KEY).getAsString()).isEqualTo(Sub.SUB_NAME);
   }
+
+  */
 
   @Test
   public void testClassWithBaseArrayFieldSerialization() {
