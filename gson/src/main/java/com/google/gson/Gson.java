@@ -372,9 +372,9 @@ public final class Gson {
     factories.add(TypeAdapters.CALENDAR_FACTORY);
 
     if (SqlTypesSupport.SUPPORTS_SQL_TYPES) {
-      factories.add(SqlTypesSupport.TIME_FACTORY);
-      factories.add(SqlTypesSupport.DATE_FACTORY);
-      factories.add(SqlTypesSupport.TIMESTAMP_FACTORY);
+      factories.add(SqlTypesSupport.SQL_TIME_FACTORY);
+      factories.add(SqlTypesSupport.SQL_DATE_FACTORY);
+      factories.add(SqlTypesSupport.SQL_TIMESTAMP_FACTORY);
     }
 
     factories.add(ArrayTypeAdapter.FACTORY);

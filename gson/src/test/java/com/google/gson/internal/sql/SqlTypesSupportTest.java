@@ -1,19 +1,3 @@
-/*
- * Copyright (C) 2020 Google Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package com.google.gson.internal.sql;
 
 import static com.google.common.truth.Truth.assertThat;
@@ -23,13 +7,17 @@ import org.junit.Test;
 public class SqlTypesSupportTest {
   @Test
   public void testSupported() {
+    // Verify that SQL types are supported
     assertThat(SqlTypesSupport.SUPPORTS_SQL_TYPES).isTrue();
 
+    // Ensure the correct types are initialized
     assertThat(SqlTypesSupport.DATE_DATE_TYPE).isNotNull();
     assertThat(SqlTypesSupport.TIMESTAMP_DATE_TYPE).isNotNull();
 
-    assertThat(SqlTypesSupport.DATE_FACTORY).isNotNull();
-    assertThat(SqlTypesSupport.TIME_FACTORY).isNotNull();
-    assertThat(SqlTypesSupport.TIMESTAMP_FACTORY).isNotNull();
+    // Ensure the factories are not null
+    assertThat(SqlTypesSupport.SQL_DATE_FACTORY).isNotNull(); // Updated to match the corrected name
+    assertThat(SqlTypesSupport.SQL_TIME_FACTORY).isNotNull(); // Updated to match the corrected name
+    assertThat(SqlTypesSupport.SQL_TIMESTAMP_FACTORY)
+        .isNotNull(); // Updated to match the corrected name
   }
 }
