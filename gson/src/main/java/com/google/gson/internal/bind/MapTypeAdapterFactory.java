@@ -116,6 +116,22 @@ public final class MapTypeAdapterFactory implements TypeAdapterFactory {
   private final ConstructorConstructor constructorConstructor;
   final boolean complexMapKeySerialization;
 
+  /** Encapsulates map type information to reduce parameter passing. */
+  private static class MapTypeInfo<T> {
+    final TypeAdapter<?> keyTypeAdapter;
+    final TypeAdapter<?> valueTypeAdapter;
+    final ObjectConstructor<? extends T> constructor;
+
+    MapTypeInfo(
+        TypeAdapter<?> keyTypeAdapter,
+        TypeAdapter<?> valueTypeAdapter,
+        ObjectConstructor<? extends T> constructor) {
+      this.keyTypeAdapter = keyTypeAdapter;
+      this.valueTypeAdapter = valueTypeAdapter;
+      this.constructor = constructor;
+    }
+  }
+
   public MapTypeAdapterFactory(
       ConstructorConstructor constructorConstructor, boolean complexMapKeySerialization) {
     this.constructorConstructor = constructorConstructor;
@@ -131,24 +147,38 @@ public final class MapTypeAdapterFactory implements TypeAdapterFactory {
       return null;
     }
 
+    MapTypeInfo<? extends Map<?, ?>> mapTypeInfo = createMapTypeInfo(gson, type, rawType);
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    // we don't define a type parameter for the key or value types
+    TypeAdapter<T> result =
+        new Adapter(
+            mapTypeInfo.keyTypeAdapter, mapTypeInfo.valueTypeAdapter, mapTypeInfo.constructor);
+
+    return result;
+  }
+
+  /** Creates type information for map handling. */
+  private <T> MapTypeInfo<T> createMapTypeInfo(Gson gson, Type type, Class<?> rawType) {
     Type[] keyAndValueTypes = GsonTypes.getMapKeyAndValueTypes(type, rawType);
     Type keyType = keyAndValueTypes[0];
     Type valueType = keyAndValueTypes[1];
+
     TypeAdapter<?> keyAdapter = getKeyAdapter(gson, keyType);
     TypeAdapter<?> wrappedKeyAdapter =
         new TypeAdapterRuntimeTypeWrapper<>(gson, keyAdapter, keyType);
     TypeAdapter<?> valueAdapter = gson.getAdapter(TypeToken.get(valueType));
     TypeAdapter<?> wrappedValueAdapter =
         new TypeAdapterRuntimeTypeWrapper<>(gson, valueAdapter, valueType);
+
     // Don't allow Unsafe usage to create instance; instances might be in broken state and calling
     // Map methods could lead to confusing exceptions
     boolean allowUnsafe = false;
-    ObjectConstructor<T> constructor = constructorConstructor.get(typeToken, allowUnsafe);
+    @SuppressWarnings("unchecked")
+    ObjectConstructor<T> constructor =
+        (ObjectConstructor<T>) constructorConstructor.get(TypeToken.get(type), allowUnsafe);
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    // we don't define a type parameter for the key or value types
-    TypeAdapter<T> result = new Adapter(wrappedKeyAdapter, wrappedValueAdapter, constructor);
-    return result;
+    return new MapTypeInfo<>(wrappedKeyAdapter, wrappedValueAdapter, constructor);
   }
 
   /** Returns a type adapter that writes the value as a string. */
@@ -162,6 +192,47 @@ public final class MapTypeAdapterFactory implements TypeAdapterFactory {
     private final TypeAdapter<K> keyTypeAdapter;
     private final TypeAdapter<V> valueTypeAdapter;
     private final ObjectConstructor<? extends Map<K, V>> constructor;
+    private final KeyStringConverter keyConverter;
+
+    /** Holds data needed for map serialization. */
+    private class MapSerializationInfo {
+      final List<JsonElement> keys;
+      final List<V> values;
+      final boolean hasComplexKeys;
+
+      MapSerializationInfo(List<JsonElement> keys, List<V> values, boolean hasComplexKeys) {
+        this.keys = keys;
+        this.values = values;
+        this.hasComplexKeys = hasComplexKeys;
+      }
+    }
+
+    /** Handles conversion of JsonElement keys to strings. */
+    private class KeyStringConverter {
+      /** Converts a JsonElement to a string representation for use as a key. */
+      String keyToString(JsonElement keyElement) {
+        if (keyElement.isJsonPrimitive()) {
+          return primitiveKeyToString(keyElement.getAsJsonPrimitive());
+        } else if (keyElement.isJsonNull()) {
+          return "null";
+        } else {
+          throw new AssertionError();
+        }
+      }
+
+      /** Converts a JsonPrimitive to a string representation. */
+      private String primitiveKeyToString(JsonPrimitive primitive) {
+        if (primitive.isNumber()) {
+          return String.valueOf(primitive.getAsNumber());
+        } else if (primitive.isBoolean()) {
+          return Boolean.toString(primitive.getAsBoolean());
+        } else if (primitive.isString()) {
+          return primitive.getAsString();
+        } else {
+          throw new AssertionError();
+        }
+      }
+    }
 
     public Adapter(
         TypeAdapter<K> keyTypeAdapter,
@@ -170,6 +241,7 @@ public final class MapTypeAdapterFactory implements TypeAdapterFactory {
       this.keyTypeAdapter = keyTypeAdapter;
       this.valueTypeAdapter = valueTypeAdapter;
       this.constructor = constructor;
+      this.keyConverter = new KeyStringConverter();
     }
 
     @Override
@@ -183,32 +255,45 @@ public final class MapTypeAdapterFactory implements TypeAdapterFactory {
       Map<K, V> map = constructor.construct();
 
       if (peek == JsonToken.BEGIN_ARRAY) {
-        in.beginArray();
-        while (in.hasNext()) {
-          in.beginArray(); // entry array
-          K key = keyTypeAdapter.read(in);
-          V value = valueTypeAdapter.read(in);
-          V replaced = map.put(key, value);
-          if (replaced != null) {
-            throw new JsonSyntaxException("duplicate key: " + key);
-          }
-          in.endArray();
-        }
-        in.endArray();
+        readMapFromArray(in, map);
       } else {
-        in.beginObject();
-        while (in.hasNext()) {
-          JsonReaderInternalAccess.INSTANCE.promoteNameToValue(in);
-          K key = keyTypeAdapter.read(in);
-          V value = valueTypeAdapter.read(in);
-          V replaced = map.put(key, value);
-          if (replaced != null) {
-            throw new JsonSyntaxException("duplicate key: " + key);
-          }
-        }
-        in.endObject();
+        readMapFromObject(in, map);
       }
+
       return map;
+    }
+
+    /** Reads a map from a JSON array format. */
+    private void readMapFromArray(JsonReader in, Map<K, V> map) throws IOException {
+      in.beginArray();
+      while (in.hasNext()) {
+        in.beginArray(); // entry array
+        K key = keyTypeAdapter.read(in);
+        V value = valueTypeAdapter.read(in);
+        putKeyValueInMap(map, key, value);
+        in.endArray();
+      }
+      in.endArray();
+    }
+
+    /** Reads a map from a JSON object format. */
+    private void readMapFromObject(JsonReader in, Map<K, V> map) throws IOException {
+      in.beginObject();
+      while (in.hasNext()) {
+        JsonReaderInternalAccess.INSTANCE.promoteNameToValue(in);
+        K key = keyTypeAdapter.read(in);
+        V value = valueTypeAdapter.read(in);
+        putKeyValueInMap(map, key, value);
+      }
+      in.endObject();
+    }
+
+    /** Puts a key-value pair in the map, throwing an exception for duplicate keys. */
+    private void putKeyValueInMap(Map<K, V> map, K key, V value) {
+      V replaced = map.put(key, value);
+      if (replaced != null) {
+        throw new JsonSyntaxException("duplicate key: " + key);
+      }
     }
 
     @Override
@@ -219,19 +304,35 @@ public final class MapTypeAdapterFactory implements TypeAdapterFactory {
       }
 
       if (!complexMapKeySerialization) {
-        out.beginObject();
-        for (Map.Entry<K, V> entry : map.entrySet()) {
-          out.name(String.valueOf(entry.getKey()));
-          valueTypeAdapter.write(out, entry.getValue());
-        }
-        out.endObject();
+        writeMapAsObject(out, map);
         return;
       }
 
+      MapSerializationInfo serInfo = prepareMapSerialization(map);
+
+      if (serInfo.hasComplexKeys) {
+        writeMapAsArray(out, serInfo);
+      } else {
+        writeMapAsSimpleObject(out, serInfo);
+      }
+    }
+
+    /** Writes map as a simple object with non-complex keys. */
+    private void writeMapAsObject(JsonWriter out, Map<K, V> map) throws IOException {
+      out.beginObject();
+      for (Map.Entry<K, V> entry : map.entrySet()) {
+        out.name(String.valueOf(entry.getKey()));
+        valueTypeAdapter.write(out, entry.getValue());
+      }
+      out.endObject();
+    }
+
+    /** Prepares serialization data for a map. */
+    private MapSerializationInfo prepareMapSerialization(Map<K, V> map) {
       boolean hasComplexKeys = false;
       List<JsonElement> keys = new ArrayList<>(map.size());
-
       List<V> values = new ArrayList<>(map.size());
+
       for (Map.Entry<K, V> entry : map.entrySet()) {
         JsonElement keyElement = keyTypeAdapter.toJsonTree(entry.getKey());
         keys.add(keyElement);
@@ -239,43 +340,31 @@ public final class MapTypeAdapterFactory implements TypeAdapterFactory {
         hasComplexKeys |= keyElement.isJsonArray() || keyElement.isJsonObject();
       }
 
-      if (hasComplexKeys) {
-        out.beginArray();
-        for (int i = 0, size = keys.size(); i < size; i++) {
-          out.beginArray(); // entry array
-          Streams.write(keys.get(i), out);
-          valueTypeAdapter.write(out, values.get(i));
-          out.endArray();
-        }
-        out.endArray();
-      } else {
-        out.beginObject();
-        for (int i = 0, size = keys.size(); i < size; i++) {
-          JsonElement keyElement = keys.get(i);
-          out.name(keyToString(keyElement));
-          valueTypeAdapter.write(out, values.get(i));
-        }
-        out.endObject();
-      }
+      return new MapSerializationInfo(keys, values, hasComplexKeys);
     }
 
-    private String keyToString(JsonElement keyElement) {
-      if (keyElement.isJsonPrimitive()) {
-        JsonPrimitive primitive = keyElement.getAsJsonPrimitive();
-        if (primitive.isNumber()) {
-          return String.valueOf(primitive.getAsNumber());
-        } else if (primitive.isBoolean()) {
-          return Boolean.toString(primitive.getAsBoolean());
-        } else if (primitive.isString()) {
-          return primitive.getAsString();
-        } else {
-          throw new AssertionError();
-        }
-      } else if (keyElement.isJsonNull()) {
-        return "null";
-      } else {
-        throw new AssertionError();
+    /** Writes a map as an array of key-value pairs. */
+    private void writeMapAsArray(JsonWriter out, MapSerializationInfo serInfo) throws IOException {
+      out.beginArray();
+      for (int i = 0, size = serInfo.keys.size(); i < size; i++) {
+        out.beginArray(); // entry array
+        Streams.write(serInfo.keys.get(i), out);
+        valueTypeAdapter.write(out, serInfo.values.get(i));
+        out.endArray();
       }
+      out.endArray();
+    }
+
+    /** Writes a map as a regular object with simple keys. */
+    private void writeMapAsSimpleObject(JsonWriter out, MapSerializationInfo serInfo)
+        throws IOException {
+      out.beginObject();
+      for (int i = 0, size = serInfo.keys.size(); i < size; i++) {
+        JsonElement keyElement = serInfo.keys.get(i);
+        out.name(keyConverter.keyToString(keyElement));
+        valueTypeAdapter.write(out, serInfo.values.get(i));
+      }
+      out.endObject();
     }
   }
 }
