@@ -1,43 +1,85 @@
+/*
+ * Copyright (C) 2020 Google Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.google.gson.internal.sql;
 
 import com.google.gson.TypeAdapterFactory;
-import com.google.gson.internal.bind.TypeAdapters;
-import java.sql.Date;
-import java.sql.Time;
+import com.google.gson.internal.bind.DefaultDateTypeAdapter.DateType;
 import java.sql.Timestamp;
+import java.util.Date;
 
+/**
+ * Encapsulates access to {@code java.sql} types, to allow Gson to work without the {@code java.sql}
+ * module being present. No {@link ClassNotFoundException}s will be thrown in case the {@code
+ * java.sql} module is not present.
+ *
+ * <p>If {@link #SUPPORTS_SQL_TYPES} is {@code true}, all other constants of this class will be
+ * non-{@code null}. However, if it is {@code false} all other constants will be {@code null} and
+ * there will be no support for {@code java.sql} types.
+ */
+@SuppressWarnings("JavaUtilDate")
 public final class SqlTypesSupport {
-  // TypeAdapterFactories for SQL Date, Time, and Timestamp
-  public static final TypeAdapterFactory SQL_DATE_FACTORY =
-      TypeAdapters.newFactory(Date.class, new SqlDateTypeAdapter());
-  public static final TypeAdapterFactory SQL_TIME_FACTORY =
-      TypeAdapters.newFactory(Time.class, new SqlTimeTypeAdapter());
-  public static final TypeAdapterFactory SQL_TIMESTAMP_FACTORY =
-      TypeAdapters.newFactory(Timestamp.class, new SqlTimestampTypeAdapter());
+  /** {@code true} if {@code java.sql} types are supported, {@code false} otherwise */
+  public static final boolean SUPPORTS_SQL_TYPES;
 
-  // Add these constants here for DATE and TIMESTAMP types
-  public static final String DATE_DATE_TYPE = "DATE";
-  public static final String TIMESTAMP_DATE_TYPE = "TIMESTAMP";
-  public static final String TIME_DATE_TYPE = "TIME";
+  public static final DateType<? extends Date> DATE_DATE_TYPE;
+  public static final DateType<? extends Date> TIMESTAMP_DATE_TYPE;
 
-  // Method to create adapter factory for each type
-  public static TypeAdapterFactory createAdapterFactory(String type) {
-    switch (type) {
-      case DATE_DATE_TYPE:
-        return SQL_DATE_FACTORY;
-      case TIMESTAMP_DATE_TYPE:
-        return SQL_TIMESTAMP_FACTORY;
-      case TIME_DATE_TYPE:
-        return SQL_TIME_FACTORY;
-      default:
-        throw new IllegalArgumentException("Unsupported SQL type: " + type);
+  public static final TypeAdapterFactory DATE_FACTORY;
+  public static final TypeAdapterFactory TIME_FACTORY;
+  public static final TypeAdapterFactory TIMESTAMP_FACTORY;
+
+  static {
+    boolean sqlTypesSupport;
+    try {
+      Class.forName("java.sql.Date");
+      sqlTypesSupport = true;
+    } catch (ClassNotFoundException classNotFoundException) {
+      sqlTypesSupport = false;
+    }
+    SUPPORTS_SQL_TYPES = sqlTypesSupport;
+
+    if (SUPPORTS_SQL_TYPES) {
+      DATE_DATE_TYPE =
+          new DateType<java.sql.Date>(java.sql.Date.class) {
+            @Override
+            protected java.sql.Date deserialize(Date date) {
+              return new java.sql.Date(date.getTime());
+            }
+          };
+      TIMESTAMP_DATE_TYPE =
+          new DateType<Timestamp>(Timestamp.class) {
+            @Override
+            protected Timestamp deserialize(Date date) {
+              return new Timestamp(date.getTime());
+            }
+          };
+
+      DATE_FACTORY = SqlDateTypeAdapter.FACTORY;
+      TIME_FACTORY = SqlTimeTypeAdapter.FACTORY;
+      TIMESTAMP_FACTORY = SqlTimestampTypeAdapter.FACTORY;
+    } else {
+      DATE_DATE_TYPE = null;
+      TIMESTAMP_DATE_TYPE = null;
+
+      DATE_FACTORY = null;
+      TIME_FACTORY = null;
+      TIMESTAMP_FACTORY = null;
     }
   }
 
-  // Constants to use in the check for SQL Types
-  public static final boolean SUPPORTS_SQL_TYPES = true; // or false depending on your requirements
-
-  private SqlTypesSupport() {
-    // Private constructor to prevent instantiation
-  }
+  private SqlTypesSupport() {}
 }

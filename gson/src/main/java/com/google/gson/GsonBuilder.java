@@ -922,11 +922,8 @@ public final class GsonBuilder {
 
       if (sqlTypesSupported) {
         sqlTimestampAdapterFactory =
-            SqlTypesSupport.createAdapterFactory(
-                SqlTypesSupport.TIMESTAMP_DATE_TYPE); // Correct method call
-        sqlDateAdapterFactory =
-            SqlTypesSupport.createAdapterFactory(
-                SqlTypesSupport.DATE_DATE_TYPE); // Correct method call
+            SqlTypesSupport.TIMESTAMP_DATE_TYPE.createAdapterFactory(datePattern);
+        sqlDateAdapterFactory = SqlTypesSupport.DATE_DATE_TYPE.createAdapterFactory(datePattern);
       }
     } else if (dateStyle != DateFormat.DEFAULT || timeStyle != DateFormat.DEFAULT) {
       dateAdapterFactory =
@@ -934,11 +931,9 @@ public final class GsonBuilder {
 
       if (sqlTypesSupported) {
         sqlTimestampAdapterFactory =
-            SqlTypesSupport.createAdapterFactory(
-                SqlTypesSupport.TIMESTAMP_DATE_TYPE); // Correct method call
+            SqlTypesSupport.TIMESTAMP_DATE_TYPE.createAdapterFactory(dateStyle, timeStyle);
         sqlDateAdapterFactory =
-            SqlTypesSupport.createAdapterFactory(
-                SqlTypesSupport.DATE_DATE_TYPE); // Correct method call
+            SqlTypesSupport.DATE_DATE_TYPE.createAdapterFactory(dateStyle, timeStyle);
       }
     } else {
       return;
