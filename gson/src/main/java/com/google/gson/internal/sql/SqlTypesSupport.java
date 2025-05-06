@@ -26,60 +26,77 @@ import java.util.Date;
  * module being present. No {@link ClassNotFoundException}s will be thrown in case the {@code
  * java.sql} module is not present.
  *
- * <p>If {@link #SUPPORTS_SQL_TYPES} is {@code true}, all other constants of this class will be
- * non-{@code null}. However, if it is {@code false} all other constants will be {@code null} and
- * there will be no support for {@code java.sql} types.
+ * <p>If SQL types are supported, all constants of this class will be non-{@code null}. However, if
+ * not supported, all other constants will be {@code null}.
  */
 @SuppressWarnings("JavaUtilDate")
 public final class SqlTypesSupport {
+
+  private static final String SQL_DATE_CLASS_NAME = "java.sql.Date";
+
   /** {@code true} if {@code java.sql} types are supported, {@code false} otherwise */
-  public static final boolean SUPPORTS_SQL_TYPES;
+  public static final boolean SUPPORTS_SQL_TYPES = checkSqlTypesSupport();
 
-  public static final DateType<? extends Date> DATE_DATE_TYPE;
-  public static final DateType<? extends Date> TIMESTAMP_DATE_TYPE;
+  public static final DateType<? extends Date> DATE_DATE_TYPE = createSqlDateType();
+  public static final DateType<? extends Date> TIMESTAMP_DATE_TYPE = createTimestampDateType();
 
-  public static final TypeAdapterFactory DATE_FACTORY;
-  public static final TypeAdapterFactory TIME_FACTORY;
-  public static final TypeAdapterFactory TIMESTAMP_FACTORY;
+  public static final TypeAdapterFactory DATE_FACTORY =
+      SUPPORTS_SQL_TYPES ? SqlDateTypeAdapter.FACTORY : null;
+  public static final TypeAdapterFactory TIME_FACTORY =
+      SUPPORTS_SQL_TYPES ? SqlTimeTypeAdapter.FACTORY : null;
+  public static final TypeAdapterFactory TIMESTAMP_FACTORY =
+      SUPPORTS_SQL_TYPES ? SqlTimestampTypeAdapter.FACTORY : null;
 
-  static {
-    boolean sqlTypesSupport;
+  /**
+   * Checks if SQL types are supported by attempting to load a SQL class.
+   *
+   * @return true if SQL types are supported, false otherwise
+   */
+  private static boolean checkSqlTypesSupport() {
     try {
-      Class.forName("java.sql.Date");
-      sqlTypesSupport = true;
+      Class.forName(SQL_DATE_CLASS_NAME);
+      return true;
     } catch (ClassNotFoundException classNotFoundException) {
-      sqlTypesSupport = false;
-    }
-    SUPPORTS_SQL_TYPES = sqlTypesSupport;
-
-    if (SUPPORTS_SQL_TYPES) {
-      DATE_DATE_TYPE =
-          new DateType<java.sql.Date>(java.sql.Date.class) {
-            @Override
-            protected java.sql.Date deserialize(Date date) {
-              return new java.sql.Date(date.getTime());
-            }
-          };
-      TIMESTAMP_DATE_TYPE =
-          new DateType<Timestamp>(Timestamp.class) {
-            @Override
-            protected Timestamp deserialize(Date date) {
-              return new Timestamp(date.getTime());
-            }
-          };
-
-      DATE_FACTORY = SqlDateTypeAdapter.FACTORY;
-      TIME_FACTORY = SqlTimeTypeAdapter.FACTORY;
-      TIMESTAMP_FACTORY = SqlTimestampTypeAdapter.FACTORY;
-    } else {
-      DATE_DATE_TYPE = null;
-      TIMESTAMP_DATE_TYPE = null;
-
-      DATE_FACTORY = null;
-      TIME_FACTORY = null;
-      TIMESTAMP_FACTORY = null;
+      return false;
     }
   }
 
+  /**
+   * Creates the SQL Date type if supported.
+   *
+   * @return DateType for SQL Date or null if not supported
+   */
+  private static DateType<? extends Date> createSqlDateType() {
+    if (!SUPPORTS_SQL_TYPES) {
+      return null;
+    }
+
+    return new DateType<java.sql.Date>(java.sql.Date.class) {
+      @Override
+      protected java.sql.Date deserialize(Date date) {
+        return new java.sql.Date(date.getTime());
+      }
+    };
+  }
+
+  /**
+   * Creates the SQL Timestamp type if supported.
+   *
+   * @return DateType for SQL Timestamp or null if not supported
+   */
+  private static DateType<? extends Date> createTimestampDateType() {
+    if (!SUPPORTS_SQL_TYPES) {
+      return null;
+    }
+
+    return new DateType<Timestamp>(Timestamp.class) {
+      @Override
+      protected Timestamp deserialize(Date date) {
+        return new Timestamp(date.getTime());
+      }
+    };
+  }
+
+  // Prevent instantiation
   private SqlTypesSupport() {}
 }

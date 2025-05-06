@@ -26,25 +26,24 @@ import java.io.IOException;
 import java.sql.Timestamp;
 import java.util.Date;
 
+/**
+ * Type adapter for java.sql.Timestamp. Delegates to a Date type adapter for the actual
+ * serialization.
+ */
 @SuppressWarnings("JavaUtilDate")
 class SqlTimestampTypeAdapter extends TypeAdapter<Timestamp> {
-  static final TypeAdapterFactory FACTORY =
-      new TypeAdapterFactory() {
-        @SuppressWarnings("unchecked") // we use a runtime check to make sure the 'T's equal
-        @Override
-        public <T> TypeAdapter<T> create(Gson gson, TypeToken<T> typeToken) {
-          if (typeToken.getRawType() == Timestamp.class) {
-            TypeAdapter<Date> dateTypeAdapter = gson.getAdapter(Date.class);
-            return (TypeAdapter<T>) new SqlTimestampTypeAdapter(dateTypeAdapter);
-          } else {
-            return null;
-          }
-        }
-      };
+
+  /** Factory for creating SqlTimestampTypeAdapter instances. */
+  static final TypeAdapterFactory FACTORY = new SqlTimestampTypeAdapterFactory();
 
   private final TypeAdapter<Date> dateTypeAdapter;
 
-  private SqlTimestampTypeAdapter(TypeAdapter<Date> dateTypeAdapter) {
+  /**
+   * Constructs a new SqlTimestampTypeAdapter.
+   *
+   * @param dateTypeAdapter The delegate adapter for Date serialization
+   */
+  SqlTimestampTypeAdapter(TypeAdapter<Date> dateTypeAdapter) {
     this.dateTypeAdapter = dateTypeAdapter;
   }
 
@@ -57,5 +56,21 @@ class SqlTimestampTypeAdapter extends TypeAdapter<Timestamp> {
   @Override
   public void write(JsonWriter out, Timestamp value) throws IOException {
     dateTypeAdapter.write(out, value);
+  }
+
+  /** Factory implementation for SqlTimestampTypeAdapter. */
+  private static class SqlTimestampTypeAdapterFactory implements TypeAdapterFactory {
+    @Override
+    public <T> TypeAdapter<T> create(Gson gson, TypeToken<T> typeToken) {
+      Class<? super T> rawType = typeToken.getRawType();
+      if (!Timestamp.class.isAssignableFrom(rawType)) {
+        return null;
+      }
+
+      TypeAdapter<Date> dateTypeAdapter = gson.getAdapter(Date.class);
+      @SuppressWarnings("unchecked") // Type safety ensured by isAssignableFrom check
+      TypeAdapter<T> adapter = (TypeAdapter<T>) new SqlTimestampTypeAdapter(dateTypeAdapter);
+      return adapter;
+    }
   }
 }

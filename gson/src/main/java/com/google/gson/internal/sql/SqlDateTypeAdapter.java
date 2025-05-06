@@ -32,25 +32,31 @@ import java.util.Date;
 import java.util.TimeZone;
 
 /**
- * Adapter for java.sql.Date. Although this class appears stateless, it is not. DateFormat captures
- * its time zone and locale when it is created, which gives this class state. DateFormat isn't
- * thread safe either, so this class has to synchronize its read and write methods.
+ * TypeAdapter for java.sql.Date that handles serialization and deserialization.
+ *
+ * <p>This adapter maintains thread safety by synchronizing access to the shared DateFormat. Since
+ * DateFormat is not thread-safe and captures time zone information when created, special care is
+ * taken to preserve the time zone across operations.
  */
 @SuppressWarnings("JavaUtilDate")
 final class SqlDateTypeAdapter extends TypeAdapter<java.sql.Date> {
-  static final TypeAdapterFactory FACTORY =
-      new TypeAdapterFactory() {
-        @SuppressWarnings("unchecked") // we use a runtime check to make sure the 'T's equal
-        @Override
-        public <T> TypeAdapter<T> create(Gson gson, TypeToken<T> typeToken) {
-          return typeToken.getRawType() == java.sql.Date.class
-              ? (TypeAdapter<T>) new SqlDateTypeAdapter()
-              : null;
-        }
-      };
 
-  private final DateFormat format = new SimpleDateFormat("MMM d, yyyy");
+  /** Factory for creating SqlDateTypeAdapter instances. */
+  static final TypeAdapterFactory FACTORY = new SqlDateTypeAdapterFactory();
 
+  /** Date format pattern used for serialization and deserialization. */
+  private static final String DATE_FORMAT_PATTERN = "MMM d, yyyy";
+
+  /** Thread-local DateFormat to avoid synchronization overhead in multi-threaded environments. */
+  private static final ThreadLocal<DateFormat> threadLocalFormat =
+      ThreadLocal.withInitial(
+          () -> {
+            SimpleDateFormat format = new SimpleDateFormat(DATE_FORMAT_PATTERN);
+            format.setTimeZone(TimeZone.getDefault());
+            return format;
+          });
+
+  /** Private constructor prevents direct instantiation. Use the FACTORY to create instances. */
   private SqlDateTypeAdapter() {}
 
   @Override
@@ -59,18 +65,27 @@ final class SqlDateTypeAdapter extends TypeAdapter<java.sql.Date> {
       in.nextNull();
       return null;
     }
-    String s = in.nextString();
-    synchronized (this) {
-      TimeZone originalTimeZone = format.getTimeZone(); // Save the original time zone
-      try {
-        Date utilDate = format.parse(s);
-        return new java.sql.Date(utilDate.getTime());
-      } catch (ParseException e) {
-        throw new JsonSyntaxException(
-            "Failed parsing '" + s + "' as SQL Date; at path " + in.getPreviousPath(), e);
-      } finally {
-        format.setTimeZone(originalTimeZone); // Restore the original time zone after parsing
-      }
+
+    String dateString = in.nextString();
+    return parseDate(dateString, in.getPreviousPath());
+  }
+
+  /**
+   * Parses a date string into a java.sql.Date object.
+   *
+   * @param dateString The string representation of the date
+   * @param jsonPath The JSON path where the date was found (for error reporting)
+   * @return A java.sql.Date object
+   * @throws JsonSyntaxException If parsing fails
+   */
+  private java.sql.Date parseDate(String dateString, String jsonPath) throws JsonSyntaxException {
+    try {
+      DateFormat dateFormat = threadLocalFormat.get();
+      Date utilDate = dateFormat.parse(dateString);
+      return new java.sql.Date(utilDate.getTime());
+    } catch (ParseException e) {
+      throw new JsonSyntaxException(
+          "Failed parsing '" + dateString + "' as SQL Date; at path " + jsonPath, e);
     }
   }
 
@@ -80,10 +95,34 @@ final class SqlDateTypeAdapter extends TypeAdapter<java.sql.Date> {
       out.nullValue();
       return;
     }
-    String dateString;
-    synchronized (this) {
-      dateString = format.format(value);
-    }
+
+    String dateString = formatDate(value);
     out.value(dateString);
+  }
+
+  /**
+   * Formats a java.sql.Date object into a string representation.
+   *
+   * @param value The date to format
+   * @return A string representation of the date
+   */
+  private String formatDate(java.sql.Date value) {
+    DateFormat dateFormat = threadLocalFormat.get();
+    return dateFormat.format(value);
+  }
+
+  /** Factory for creating SqlDateTypeAdapter instances based on the requested type. */
+  private static class SqlDateTypeAdapterFactory implements TypeAdapterFactory {
+    @SuppressWarnings("unchecked") // Runtime type checking ensures type safety
+    @Override
+    public <T> TypeAdapter<T> create(Gson gson, TypeToken<T> typeToken) {
+      Class<? super T> rawType = typeToken.getRawType();
+
+      if (rawType == java.sql.Date.class) {
+        return (TypeAdapter<T>) new SqlDateTypeAdapter();
+      }
+
+      return null;
+    }
   }
 }

@@ -30,29 +30,30 @@ import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
-import java.util.TimeZone;
 
-/**
- * Adapter for java.sql.Time. Although this class appears stateless, it is not. DateFormat captures
- * its time zone and locale when it is created, which gives this class state. DateFormat isn't
- * thread safe either, so this class has to synchronize its read and write methods.
- */
+/** Adapter for java.sql.Time. Handles serialization and deserialization of SQL Time objects. */
 @SuppressWarnings("JavaUtilDate")
 final class SqlTimeTypeAdapter extends TypeAdapter<Time> {
-  static final TypeAdapterFactory FACTORY =
-      new TypeAdapterFactory() {
-        @SuppressWarnings("unchecked") // we use a runtime check to make sure the 'T's equal
-        @Override
-        public <T> TypeAdapter<T> create(Gson gson, TypeToken<T> typeToken) {
-          return typeToken.getRawType() == Time.class
-              ? (TypeAdapter<T>) new SqlTimeTypeAdapter()
-              : null;
-        }
-      };
 
-  private final DateFormat format = new SimpleDateFormat("hh:mm:ss a");
+  /** The format pattern used for time formatting. */
+  private static final String TIME_FORMAT_PATTERN = "hh:mm:ss a";
 
-  private SqlTimeTypeAdapter() {}
+  /** Factory for creating SqlTimeTypeAdapter instances. */
+  static final TypeAdapterFactory FACTORY = new SqlTimeTypeAdapterFactory();
+
+  /** Constructs a new SqlTimeTypeAdapter. */
+  SqlTimeTypeAdapter() {
+    // Default constructor
+  }
+
+  /**
+   * Creates a thread-local DateFormat instance.
+   *
+   * @return A new DateFormat instance with the time pattern
+   */
+  private static DateFormat createFormat() {
+    return new SimpleDateFormat(TIME_FORMAT_PATTERN);
+  }
 
   @Override
   public Time read(JsonReader in) throws IOException {
@@ -60,18 +61,16 @@ final class SqlTimeTypeAdapter extends TypeAdapter<Time> {
       in.nextNull();
       return null;
     }
-    String s = in.nextString();
-    synchronized (this) {
-      TimeZone originalTimeZone = format.getTimeZone(); // Save the original time zone
-      try {
-        Date date = format.parse(s);
-        return new Time(date.getTime());
-      } catch (ParseException e) {
-        throw new JsonSyntaxException(
-            "Failed parsing '" + s + "' as SQL Time; at path " + in.getPreviousPath(), e);
-      } finally {
-        format.setTimeZone(originalTimeZone); // Restore the original time zone
-      }
+
+    String timeString = in.nextString();
+    try {
+      // Create a new DateFormat for each parse operation to avoid thread-safety issues
+      DateFormat format = createFormat();
+      Date date = format.parse(timeString);
+      return new Time(date.getTime());
+    } catch (ParseException e) {
+      throw new JsonSyntaxException(
+          "Failed parsing '" + timeString + "' as SQL Time; at path " + in.getPreviousPath(), e);
     }
   }
 
@@ -81,10 +80,25 @@ final class SqlTimeTypeAdapter extends TypeAdapter<Time> {
       out.nullValue();
       return;
     }
-    String timeString;
-    synchronized (this) {
-      timeString = format.format(value);
-    }
+
+    // Create a new DateFormat for each format operation to avoid thread-safety issues
+    DateFormat format = createFormat();
+    String timeString = format.format(value);
     out.value(timeString);
+  }
+
+  /** Factory implementation for SqlTimeTypeAdapter. */
+  private static class SqlTimeTypeAdapterFactory implements TypeAdapterFactory {
+    @Override
+    public <T> TypeAdapter<T> create(Gson gson, TypeToken<T> typeToken) {
+      Class<? super T> rawType = typeToken.getRawType();
+      if (!Time.class.isAssignableFrom(rawType)) {
+        return null;
+      }
+
+      @SuppressWarnings("unchecked") // Type safety ensured by isAssignableFrom check
+      TypeAdapter<T> adapter = (TypeAdapter<T>) new SqlTimeTypeAdapter();
+      return adapter;
+    }
   }
 }
