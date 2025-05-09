@@ -19,7 +19,6 @@ package com.google.gson.internal;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonIOException;
 import com.google.gson.JsonNull;
-import com.google.gson.JsonParseException;
 import com.google.gson.JsonSyntaxException;
 import com.google.gson.internal.bind.TypeAdapters;
 import com.google.gson.stream.JsonReader;
@@ -34,32 +33,43 @@ import java.util.Objects;
 /** Reads and writes GSON parse trees over streams. */
 public final class Streams {
   private Streams() {
-    throw new UnsupportedOperationException();
+    /* no instances */
   }
 
-  /** Takes a reader in any state and returns the next value as a JsonElement. */
-  public static JsonElement parse(JsonReader reader) throws JsonParseException {
+  /**
+   * Takes a reader in any state and returns the next value as a JsonElement.
+   *
+   * <ul>
+   *   <li>If the stream is completely empty (EOF on first peek), returns JsonNull.
+   *   <li>If the very first token is END_DOCUMENT, returns JsonNull.
+   *   <li>If EOF occurs _after_ we know it’s non‐empty, or any syntax error, throws
+   *       JsonSyntaxException.
+   *   <li>Any other I/O error becomes a JsonIOException.
+   * </ul>
+   */
+  public static JsonElement parse(JsonReader reader) {
     boolean isEmpty = true;
     try {
-      JsonToken unused = reader.peek();
+      JsonToken token = reader.peek(); // use the result, satisfies CheckReturnValue
+      if (token == JsonToken.END_DOCUMENT) {
+        // empty or only whitespace → JSON null
+        return JsonNull.INSTANCE;
+      }
       isEmpty = false;
       return TypeAdapters.JSON_ELEMENT.read(reader);
-    } catch (EOFException e) {
-      /*
-       * For compatibility with JSON 1.5 and earlier, we return a JsonNull for
-       * empty documents instead of throwing.
-       */
+    } catch (EOFException eof) {
+      // EOF on first peek → empty document → JSON null
       if (isEmpty) {
         return JsonNull.INSTANCE;
       }
-      // The stream ended prematurely so it is likely a syntax error.
-      throw new JsonSyntaxException(e);
-    } catch (MalformedJsonException e) {
-      throw new JsonSyntaxException(e);
-    } catch (IOException e) {
-      throw new JsonIOException(e);
-    } catch (NumberFormatException e) {
-      throw new JsonSyntaxException(e);
+      // otherwise this is a truncated document
+      throw new JsonSyntaxException(eof);
+    } catch (MalformedJsonException mf) {
+      throw new JsonSyntaxException(mf);
+    } catch (IOException io) {
+      throw new JsonIOException(io);
+    } catch (NumberFormatException nf) {
+      throw new JsonSyntaxException(nf);
     }
   }
 
@@ -68,11 +78,20 @@ public final class Streams {
     TypeAdapters.JSON_ELEMENT.write(writer, element);
   }
 
+  /**
+   * Adapts an {@link Appendable} so it can be passed anywhere a {@link Writer} is used. If it’s
+   * already a Writer, we just cast; otherwise we wrap it below.
+   */
   public static Writer writerForAppendable(Appendable appendable) {
-    return appendable instanceof Writer ? (Writer) appendable : new AppendableWriter(appendable);
+    Objects.requireNonNull(appendable, "appendable == null");
+    return (appendable instanceof Writer) ? (Writer) appendable : new AppendableWriter(appendable);
   }
 
-  /** Adapts an {@link Appendable} so it can be passed anywhere a {@link Writer} is used. */
+  /**
+   * Wraps an {@link Appendable} in a {@link Writer}. Suppress ungrouped‐overloads for our
+   * deliberate ordering of overrides.
+   */
+  @SuppressWarnings("UngroupedOverloads")
   private static final class AppendableWriter extends Writer {
     private final Appendable appendable;
     private final CurrentWrite currentWrite = new CurrentWrite();
@@ -81,7 +100,6 @@ public final class Streams {
       this.appendable = appendable;
     }
 
-    @SuppressWarnings("UngroupedOverloads") // this is intentionally ungrouped, see comment below
     @Override
     public void write(char[] chars, int offset, int length) throws IOException {
       currentWrite.setChars(chars);
@@ -89,24 +107,24 @@ public final class Streams {
     }
 
     @Override
-    public void flush() {}
-
-    @Override
-    public void close() {}
-
-    // Override these methods for better performance
-    // They would otherwise unnecessarily create Strings or char arrays
-
-    @Override
-    public void write(int i) throws IOException {
-      appendable.append((char) i);
+    public void write(int c) throws IOException {
+      appendable.append((char) c);
     }
 
     @Override
     public void write(String str, int off, int len) throws IOException {
-      // Appendable.append turns null -> "null", which is not desired here
-      Objects.requireNonNull(str);
+      Objects.requireNonNull(str, "str == null");
       appendable.append(str, off, off + len);
+    }
+
+    @Override
+    public void flush() throws IOException {
+      /* no-op */
+    }
+
+    @Override
+    public void close() throws IOException {
+      /* no-op */
     }
 
     @Override
@@ -121,7 +139,7 @@ public final class Streams {
       return this;
     }
 
-    /** A mutable char sequence pointing at a single char[]. */
+    /** A mutable CharSequence over a single char[]. */
     private static class CurrentWrite implements CharSequence {
       private char[] chars;
       private String cachedString;
@@ -137,8 +155,8 @@ public final class Streams {
       }
 
       @Override
-      public char charAt(int i) {
-        return chars[i];
+      public char charAt(int index) {
+        return chars[index];
       }
 
       @Override
@@ -146,7 +164,6 @@ public final class Streams {
         return new String(chars, start, end - start);
       }
 
-      // Must return string representation to satisfy toString() contract
       @Override
       public String toString() {
         if (cachedString == null) {

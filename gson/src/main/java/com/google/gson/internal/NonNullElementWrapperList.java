@@ -16,25 +16,31 @@
 
 package com.google.gson.internal;
 
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.AbstractList;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.RandomAccess;
 
 /**
- * {@link List} which wraps another {@code List} but prevents insertion of {@code null} elements.
- * Methods which only perform checks with the element argument (e.g. {@link #contains(Object)}) do
- * not throw exceptions for {@code null} arguments.
+ * {@link List} which wraps another {@code List} but prevents inserting {@code null}. Relies on
+ * AbstractList for all non-mutating and default bulk operations.
  */
-public class NonNullElementWrapperList<E> extends AbstractList<E> implements RandomAccess {
-  // Explicitly specify ArrayList as type to guarantee that delegate implements RandomAccess
-  private final ArrayList<E> delegate;
+public final class NonNullElementWrapperList<E> extends AbstractList<E> implements RandomAccess {
 
-  @SuppressWarnings("NonApiType")
-  public NonNullElementWrapperList(ArrayList<E> delegate) {
-    this.delegate = Objects.requireNonNull(delegate);
+  private final List<E> delegate;
+
+  /**
+   * @param delegate any non-null List that implements RandomAccess
+   * @throws NullPointerException if delegate is null
+   * @throws IllegalArgumentException if delegate is not RandomAccess
+   */
+  public NonNullElementWrapperList(List<E> delegate) {
+    this.delegate = Objects.requireNonNull(delegate, "delegate must be non-null");
+    if (!(delegate instanceof RandomAccess)) {
+      throw new IllegalArgumentException("delegate must implement RandomAccess");
+    }
   }
 
   @Override
@@ -47,21 +53,16 @@ public class NonNullElementWrapperList<E> extends AbstractList<E> implements Ran
     return delegate.size();
   }
 
-  private E nonNull(E element) {
-    if (element == null) {
-      throw new NullPointerException("Element must be non-null");
-    }
-    return element;
-  }
-
   @Override
   public E set(int index, E element) {
-    return delegate.set(index, nonNull(element));
+    E nonNull = requireNonNullElement(element);
+    return delegate.set(index, nonNull);
   }
 
   @Override
   public void add(int index, E element) {
-    delegate.add(index, nonNull(element));
+    E nonNull = requireNonNullElement(element);
+    delegate.add(index, nonNull);
   }
 
   @Override
@@ -69,64 +70,28 @@ public class NonNullElementWrapperList<E> extends AbstractList<E> implements Ran
     return delegate.remove(index);
   }
 
-  /* The following methods are overridden because their default implementation is inefficient */
-
   @Override
-  public void clear() {
-    delegate.clear();
-  }
-
-  @SuppressWarnings("UngroupedOverloads") // this is intentionally ungrouped, see comment above
-  @Override
-  public boolean remove(Object o) {
-    return delegate.remove(o);
+  public boolean addAll(Collection<? extends E> c) {
+    for (E e : c) {
+      requireNonNullElement(e);
+    }
+    return delegate.addAll(c);
   }
 
   @Override
-  public boolean removeAll(Collection<?> c) {
-    return delegate.removeAll(c);
+  public boolean addAll(int index, Collection<? extends E> c) {
+    for (E e : c) {
+      requireNonNullElement(e);
+    }
+    return delegate.addAll(index, c);
   }
 
-  @Override
-  public boolean retainAll(Collection<?> c) {
-    return delegate.retainAll(c);
+  /**
+   * Centralized null‐check helper. Annotated so callers aren’t forced to use its return (we only
+   * care about the side‐effect NullPointerException).
+   */
+  @CanIgnoreReturnValue
+  private static <T> T requireNonNullElement(T element) {
+    return Objects.requireNonNull(element, "Element must be non-null");
   }
-
-  @Override
-  public boolean contains(Object o) {
-    return delegate.contains(o);
-  }
-
-  @Override
-  public int indexOf(Object o) {
-    return delegate.indexOf(o);
-  }
-
-  @Override
-  public int lastIndexOf(Object o) {
-    return delegate.lastIndexOf(o);
-  }
-
-  @Override
-  public Object[] toArray() {
-    return delegate.toArray();
-  }
-
-  @Override
-  public <T> T[] toArray(T[] a) {
-    return delegate.toArray(a);
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    return delegate.equals(o);
-  }
-
-  @Override
-  public int hashCode() {
-    return delegate.hashCode();
-  }
-
-  // Maybe also delegate List#sort and List#spliterator in the future, but that
-  // requires Android API level 24
 }

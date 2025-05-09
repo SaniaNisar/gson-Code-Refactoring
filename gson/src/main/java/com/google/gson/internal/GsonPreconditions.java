@@ -19,40 +19,42 @@ package com.google.gson.internal;
 import java.util.Objects;
 
 /**
- * A simple utility class used to check method Preconditions.
- *
- * <pre>
- * public long divideBy(long value) {
- *   Preconditions.checkArgument(value != 0);
- *   return this.value / value;
- * }
- * </pre>
- *
- * @author Inderjeet Singh
- * @author Joel Leitch
+ * Utility class for enforcing method preconditions. Use standard JDK alternatives like {@link
+ * Objects#requireNonNull(Object)} where possible.
  */
-@SuppressWarnings("MemberName") // legacy class name
 public final class GsonPreconditions {
   private GsonPreconditions() {
-    throw new UnsupportedOperationException();
+    throw new UnsupportedOperationException("No instances.");
   }
 
   /**
-   * @deprecated This is an internal Gson method. Use {@link Objects#requireNonNull(Object)}
-   *     instead.
+   * @deprecated Use {@link Objects#requireNonNull(Object)} instead.
    */
-  // Only deprecated for now because external projects might be using this by accident
   @Deprecated
   public static <T> T checkNotNull(T obj) {
+    return checkNotNull(obj, "Expected non-null reference");
+  }
+
+  /**
+   * @deprecated Use {@link Objects#requireNonNull(Object, String)} instead.
+   */
+  @Deprecated
+  public static <T> T checkNotNull(T obj, String message) {
     if (obj == null) {
-      throw new NullPointerException();
+      throw new NullPointerException(message);
     }
     return obj;
   }
 
   public static void checkArgument(boolean condition) {
     if (!condition) {
-      throw new IllegalArgumentException();
+      throw new IllegalArgumentException("Condition failed");
+    }
+  }
+
+  public static void checkArgument(boolean condition, String message) {
+    if (!condition) {
+      throw new IllegalArgumentException(message);
     }
   }
 }

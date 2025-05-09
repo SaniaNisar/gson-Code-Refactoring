@@ -17,6 +17,11 @@
 package com.google.gson.internal;
 
 import java.lang.reflect.Type;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Contains static utility methods pertaining to primitive types and their corresponding wrapper
@@ -25,76 +30,69 @@ import java.lang.reflect.Type;
  * @author Kevin Bourrillion
  */
 public final class Primitives {
-  private Primitives() {}
+  private Primitives() {
+    /* no instances */
+  }
 
-  /** Returns true if this type is a primitive. */
+  // Single source of truth for primitive → wrapper
+  private static final Map<Class<?>, Class<?>> PRIMITIVE_TO_WRAPPER;
+  // Automatically derived inverse mapping wrapper → primitive
+  private static final Map<Class<?>, Class<?>> WRAPPER_TO_PRIMITIVE;
+  // The set of all wrapper types, for fast lookup
+  private static final Set<Class<?>> WRAPPER_TYPES;
+
+  static {
+    Map<Class<?>, Class<?>> primToWrap = new HashMap<>(9);
+    primToWrap.put(boolean.class, Boolean.class);
+    primToWrap.put(byte.class, Byte.class);
+    primToWrap.put(char.class, Character.class);
+    primToWrap.put(double.class, Double.class);
+    primToWrap.put(float.class, Float.class);
+    primToWrap.put(int.class, Integer.class);
+    primToWrap.put(long.class, Long.class);
+    primToWrap.put(short.class, Short.class);
+    primToWrap.put(void.class, Void.class);
+    PRIMITIVE_TO_WRAPPER = Collections.unmodifiableMap(primToWrap);
+
+    Map<Class<?>, Class<?>> wrapToPrim = new HashMap<>(primToWrap.size());
+    for (Map.Entry<Class<?>, Class<?>> e : primToWrap.entrySet()) {
+      wrapToPrim.put(e.getValue(), e.getKey());
+    }
+    WRAPPER_TO_PRIMITIVE = Collections.unmodifiableMap(wrapToPrim);
+
+    WRAPPER_TYPES = Collections.unmodifiableSet(new HashSet<>(wrapToPrim.keySet()));
+  }
+
+  /** Returns true if {@code type} is a primitive type (e.g. {@code int.class}). */
   public static boolean isPrimitive(Type type) {
-    return type instanceof Class<?> && ((Class<?>) type).isPrimitive();
+    return (type instanceof Class<?>) && ((Class<?>) type).isPrimitive();
   }
 
   /**
-   * Returns {@code true} if {@code type} is one of the nine primitive-wrapper types, such as {@link
-   * Integer}.
-   *
-   * @see Class#isPrimitive
+   * Returns true if {@code type} is one of the nine primitive-wrapper types (Boolean, Byte,
+   * Character, Double, Float, Integer, Long, Short, or Void).
    */
   public static boolean isWrapperType(Type type) {
-    return type == Integer.class
-        || type == Float.class
-        || type == Byte.class
-        || type == Double.class
-        || type == Long.class
-        || type == Character.class
-        || type == Boolean.class
-        || type == Short.class
-        || type == Void.class;
+    return (type instanceof Class<?>) && WRAPPER_TYPES.contains(type);
   }
 
   /**
-   * Returns the corresponding wrapper type of {@code type} if it is a primitive type; otherwise
-   * returns {@code type} itself. Idempotent.
-   *
-   * <pre>
-   *     wrap(int.class) == Integer.class
-   *     wrap(Integer.class) == Integer.class
-   *     wrap(String.class) == String.class
-   * </pre>
+   * If {@code type} is a primitive (e.g. {@code int.class}), returns its wrapper (e.g. {@link
+   * Integer}); otherwise returns {@code type} itself.
    */
-  @SuppressWarnings({"unchecked", "MissingBraces"})
+  @SuppressWarnings("unchecked")
   public static <T> Class<T> wrap(Class<T> type) {
-    if (type == int.class) return (Class<T>) Integer.class;
-    if (type == float.class) return (Class<T>) Float.class;
-    if (type == byte.class) return (Class<T>) Byte.class;
-    if (type == double.class) return (Class<T>) Double.class;
-    if (type == long.class) return (Class<T>) Long.class;
-    if (type == char.class) return (Class<T>) Character.class;
-    if (type == boolean.class) return (Class<T>) Boolean.class;
-    if (type == short.class) return (Class<T>) Short.class;
-    if (type == void.class) return (Class<T>) Void.class;
-    return type;
+    Class<?> wrapped = PRIMITIVE_TO_WRAPPER.get(type);
+    return (Class<T>) (wrapped != null ? wrapped : type);
   }
 
   /**
-   * Returns the corresponding primitive type of {@code type} if it is a wrapper type; otherwise
-   * returns {@code type} itself. Idempotent.
-   *
-   * <pre>
-   *     unwrap(Integer.class) == int.class
-   *     unwrap(int.class) == int.class
-   *     unwrap(String.class) == String.class
-   * </pre>
+   * If {@code type} is a wrapper (e.g. {@link Integer}), returns its primitive (e.g. {@code
+   * int.class}); otherwise returns {@code type} itself.
    */
-  @SuppressWarnings({"unchecked", "MissingBraces"})
+  @SuppressWarnings("unchecked")
   public static <T> Class<T> unwrap(Class<T> type) {
-    if (type == Integer.class) return (Class<T>) int.class;
-    if (type == Float.class) return (Class<T>) float.class;
-    if (type == Byte.class) return (Class<T>) byte.class;
-    if (type == Double.class) return (Class<T>) double.class;
-    if (type == Long.class) return (Class<T>) long.class;
-    if (type == Character.class) return (Class<T>) char.class;
-    if (type == Boolean.class) return (Class<T>) boolean.class;
-    if (type == Short.class) return (Class<T>) short.class;
-    if (type == Void.class) return (Class<T>) void.class;
-    return type;
+    Class<?> primitive = WRAPPER_TO_PRIMITIVE.get(type);
+    return (Class<T>) (primitive != null ? primitive : type);
   }
 }

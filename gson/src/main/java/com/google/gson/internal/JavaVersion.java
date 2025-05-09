@@ -16,82 +16,83 @@
 
 package com.google.gson.internal;
 
+import java.util.regex.Pattern;
+
 /** Utility to check the major Java version of the current JVM. */
 public final class JavaVersion {
-  // Oracle defines naming conventions at
-  // http://www.oracle.com/technetwork/java/javase/versioning-naming-139433.html
-  // However, many alternate implementations differ. For example, Debian used 9-debian as the
-  // version string
+  /** Minimum supported JDK version when parsing fails. */
+  private static final int DEFAULT_MAJOR_VERSION = 6;
 
+  /** Regex `[._]` used to split version strings like "1.8.0_202" or "9.0.4". */
+  private static final Pattern VERSION_DELIMITER = Pattern.compile("[._]");
+
+  /** Cached at class‐load time to avoid repeated parsing. */
   private static final int majorJavaVersion = determineMajorJavaVersion();
 
+  private JavaVersion() {
+    // no instances
+  }
+
+  /** Read the system property once, guard null/empty, and parse. */
   private static int determineMajorJavaVersion() {
-    String javaVersion = System.getProperty("java.version");
-    return parseMajorJavaVersion(javaVersion);
-  }
-
-  // Visible for testing only
-  static int parseMajorJavaVersion(String javaVersion) {
-    int version = parseDotted(javaVersion);
-    if (version == -1) {
-      version = extractBeginningInt(javaVersion);
+    String version = System.getProperty("java.version");
+    if (version == null || version.isEmpty()) {
+      return DEFAULT_MAJOR_VERSION;
     }
-    if (version == -1) {
-      return 6; // Choose minimum supported JDK version as default
-    }
-    return version;
-  }
-
-  // Parses both legacy 1.8 style and newer 9.0.4 style
-  private static int parseDotted(String javaVersion) {
-    try {
-      String[] parts = javaVersion.split("[._]", 3);
-      int firstVer = Integer.parseInt(parts[0]);
-      if (firstVer == 1 && parts.length > 1) {
-        return Integer.parseInt(parts[1]);
-      } else {
-        return firstVer;
-      }
-    } catch (NumberFormatException e) {
-      return -1;
-    }
-  }
-
-  private static int extractBeginningInt(String javaVersion) {
-    try {
-      StringBuilder num = new StringBuilder();
-      for (int i = 0; i < javaVersion.length(); ++i) {
-        char c = javaVersion.charAt(i);
-        if (Character.isDigit(c)) {
-          num.append(c);
-        } else {
-          break;
-        }
-      }
-      return Integer.parseInt(num.toString());
-    } catch (NumberFormatException e) {
-      return -1;
-    }
+    return parseMajorJavaVersion(version);
   }
 
   /**
-   * Gets the major Java version
-   *
-   * @return the major Java version, i.e. '8' for Java 1.8, '9' for Java 9 etc.
+   * Visible for testing. Parses the major version from strings like "1.8.0_202", "9.0.4", or
+   * "11-ea".
    */
+  static int parseMajorJavaVersion(String version) {
+    int v = parseDotted(version);
+    if (v < 0) {
+      v = extractLeadingInt(version);
+    }
+    return v < 0 ? DEFAULT_MAJOR_VERSION : v;
+  }
+
+  /** Try splitting on `.` or `_` and parsing the first one or two components. */
+  private static int parseDotted(String version) {
+    try {
+      String[] parts = VERSION_DELIMITER.split(version, 3);
+      int first = Integer.parseInt(parts[0]);
+      // Legacy "1.x" → return x; otherwise return first
+      if (first == 1 && parts.length > 1) {
+        return Integer.parseInt(parts[1]);
+      }
+      return first;
+    } catch (NumberFormatException e) {
+      return -1;
+    }
+  }
+
+  /** Extracts a leading integer (e.g. "11-ea" ⇒ 11). */
+  private static int extractLeadingInt(String version) {
+    int i = 0;
+    int len = version.length();
+    while (i < len && Character.isDigit(version.charAt(i))) {
+      i++;
+    }
+    if (i == 0) {
+      return -1;
+    }
+    try {
+      return Integer.parseInt(version.substring(0, i));
+    } catch (NumberFormatException e) {
+      return -1;
+    }
+  }
+
+  /** The major Java version: 8 for 1.8, 9 for Java 9, etc. */
   public static int getMajorJavaVersion() {
     return majorJavaVersion;
   }
 
-  /**
-   * Gets a boolean value depending if the application is running on Java 9 or later
-   *
-   * @return {@code true} if the application is running on Java 9 or later; and {@code false}
-   *     otherwise.
-   */
+  /** Returns true if running on Java 9 or later. */
   public static boolean isJava9OrLater() {
     return majorJavaVersion >= 9;
   }
-
-  private JavaVersion() {}
 }

@@ -20,38 +20,38 @@ import java.io.InvalidObjectException;
 import java.io.ObjectInputStream;
 import java.io.ObjectStreamException;
 import java.math.BigDecimal;
+import java.util.Objects;
 
 /**
- * This class holds a number value that is lazily converted to a specific number type
- *
- * @author Inderjeet Singh
+ * Holds a JSON number literal that is only parsed into a concrete {@link Number} type on demand.
  */
-@SuppressWarnings("serial") // ignore warning about missing serialVersionUID
+@SuppressWarnings("serial") // Number is Serializable
 public final class LazilyParsedNumber extends Number {
   private final String value;
+  // Cached BigDecimal, initialized on first access
+  private transient volatile BigDecimal decimalCache;
 
   /**
-   * @param value must not be null
+   * @param value must not be null.
    */
   public LazilyParsedNumber(String value) {
-    this.value = value;
+    this.value = Objects.requireNonNull(value, "value == null");
   }
 
-  private BigDecimal asBigDecimal() {
-    return NumberLimits.parseBigDecimal(value);
+  /** Lazily parse and cache a BigDecimal of the original string. */
+  private BigDecimal getDecimal() {
+    BigDecimal result = decimalCache;
+    if (result == null) {
+      result = NumberLimits.parseBigDecimal(value);
+      decimalCache = result;
+    }
+    return result;
   }
 
   @Override
   public int intValue() {
-    try {
-      return Integer.parseInt(value);
-    } catch (NumberFormatException e) {
-      try {
-        return (int) Long.parseLong(value);
-      } catch (NumberFormatException nfe) {
-        return asBigDecimal().intValue();
-      }
-    }
+    // Narrow from long, consistent overflow handling
+    return (int) longValue();
   }
 
   @Override
@@ -59,7 +59,7 @@ public final class LazilyParsedNumber extends Number {
     try {
       return Long.parseLong(value);
     } catch (NumberFormatException e) {
-      return asBigDecimal().longValue();
+      return getDecimal().longValue();
     }
   }
 
@@ -79,16 +79,19 @@ public final class LazilyParsedNumber extends Number {
   }
 
   /**
-   * If somebody is unlucky enough to have to serialize one of these, serialize it as a BigDecimal
-   * so that they won't need Gson on the other side to deserialize it.
+   * When serializing, replace this instance with a {@link BigDecimal} so the receiver needn't know
+   * about Gson’s internal class.
    */
+  @SuppressWarnings("unused")
   private Object writeReplace() throws ObjectStreamException {
-    return asBigDecimal();
+    return getDecimal();
   }
 
+  /**
+   * Prevent deserialization of this internal class; {@code writeReplace()} should have replaced it.
+   */
+  @SuppressWarnings("unused")
   private void readObject(ObjectInputStream in) throws IOException {
-    // Don't permit directly deserializing this class; writeReplace() should have written a
-    // replacement
     throw new InvalidObjectException("Deserialization is unsupported");
   }
 
@@ -99,13 +102,7 @@ public final class LazilyParsedNumber extends Number {
 
   @Override
   public boolean equals(Object obj) {
-    if (this == obj) {
-      return true;
-    }
-    if (obj instanceof LazilyParsedNumber) {
-      LazilyParsedNumber other = (LazilyParsedNumber) obj;
-      return value.equals(other.value);
-    }
-    return false;
+    return (obj == this)
+        || (obj instanceof LazilyParsedNumber && value.equals(((LazilyParsedNumber) obj).value));
   }
 }
