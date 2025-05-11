@@ -237,7 +237,9 @@ public class JsonReader implements Closeable {
 
   private static final int PEEKED_NUMBER = 16;
   private static final int PEEKED_EOF = 17;
-
+  private static final String UNTERMINATED_STRING_MSG = "Unterminated string";
+  private static final String UNTERMINATED_COMMENT_MSG = "Unterminated comment";
+  private static final String UNTERMINATED_ESCAPE_MSG = "Unterminated escape sequence";
   /* State machine when parsing numbers */
   private static final int NUMBER_CHAR_NONE = 0;
   private static final int NUMBER_CHAR_SIGN = 1;
@@ -406,6 +408,14 @@ public class JsonReader implements Closeable {
     this.strictness = strictness;
   }
 
+  private void validateToken(int actualPeeked, int expectedPeeked, String expectedToken)
+      throws IOException {
+    if (actualPeeked != expectedPeeked) {
+      throw unexpectedTokenError(expectedToken);
+    }
+    peeked = PEEKED_NONE;
+  }
+
   /**
    * Returns the {@linkplain Strictness strictness} of this reader.
    *
@@ -458,17 +468,65 @@ public class JsonReader implements Closeable {
    * @throws IllegalStateException if the next token is not the beginning of an array.
    */
   public void beginArray() throws IOException {
-    int p = peeked;
-    if (p == PEEKED_NONE) {
-      p = doPeek();
+    int p = peekedIfNeeded();
+    validateToken(p, PEEKED_BEGIN_ARRAY, "BEGIN_ARRAY");
+    push(JsonScope.EMPTY_ARRAY);
+    pathIndices[stackSize - 1] = 0;
+  }
+
+  private int peekedIfNeeded() throws IOException {
+    return peeked == PEEKED_NONE ? doPeek() : peeked;
+  }
+
+  private String readString(char quote) throws IOException {
+    StringBuilder builder = createStringBuilder();
+    while (true) {
+      int start = pos;
+      while (pos < limit) {
+        char c = buffer[pos++];
+
+        if (c == quote) {
+          return completeString(builder, start);
+        } else if (c == '\\') {
+          handleEscapeSequence(builder, start);
+          break;
+        } else if (c == '\n') {
+          handleNewline();
+        }
+      }
+
+      if (builder == null) {
+        builder = createStringBuilder();
+      }
+      builder.append(buffer, start, pos - start - 1);
+      if (!fillBuffer(1)) {
+        throw syntaxError(UNTERMINATED_STRING_MSG);
+      }
     }
-    if (p == PEEKED_BEGIN_ARRAY) {
-      push(JsonScope.EMPTY_ARRAY);
-      pathIndices[stackSize - 1] = 0;
-      peeked = PEEKED_NONE;
-    } else {
-      throw unexpectedTokenError("BEGIN_ARRAY");
+  }
+
+  private StringBuilder createStringBuilder() {
+    return new StringBuilder(Math.max((limit - pos) * 2, 16));
+  }
+
+  private String completeString(StringBuilder builder, int start) {
+    int len = pos - start - 1;
+    return builder == null
+        ? new String(buffer, start, len)
+        : builder.append(buffer, start, len).toString();
+  }
+
+  private void handleEscapeSequence(StringBuilder builder, int start) throws IOException {
+    if (builder == null) {
+      builder = createStringBuilder();
     }
+    builder.append(buffer, start, pos - start - 1);
+    builder.append(readEscapeCharacter());
+  }
+
+  private void handleNewline() {
+    lineNumber++;
+    lineStart = pos;
   }
 
   /**
