@@ -274,8 +274,8 @@ public class ShrinkingIT {
                         + " com.example.NoSerializedNameMain$TestClassNotAbstract; usage of JDK"
                         + " Unsafe is disabled. Registering an InstanceCreator or a TypeAdapter for"
                         + " this type, adding a no-args constructor, or enabling usage of JDK"
-                        + " Unsafe may fix this problem. Or adjust your R8 configuration to keep"
-                        + " the no-args constructor of the class.");
+                        + " Unsafe may fix this problem. Or adjust your R8 configuration to retain"
+                        + " the no-args constructor.");
           }
         });
   }
